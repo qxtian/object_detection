@@ -1,0 +1,74 @@
+function svm_classify_loo(fea_dir, c_svm,class_name)
+% -------------------------------------------------------------------------
+% evaluate the performance of the image feature using linear SVM
+% we used Liblinear package in this example code
+
+cd ( 'data/ETHZ/Applelogos/');
+fdatabase = dir( '*_feat.mat');
+%fdatabase = retr_database_dir(fea_dir, '*.mat');
+
+fprintf('\nLeave one out testing...\n');
+len = length( fdatabase);
+trn_ixs = randperm(len , len / 2 );
+tst_ixs = setdiff(1:len, trn_ixs); 
+
+fea = [];
+label = [];
+cd ( '../../../');
+for train_img_idx = trn_ixs 
+    fpath = fdatabase( train_img_idx  ).name ;
+    load( [ 'data/ETHZ/Applelogos/' fpath ] , 'feas','bbs');
+    t_base = fpath(1 : length(fpath) - 8 - 7 );
+    gt_fname = [t_base '_' class_name '.groundtruth'];
+    gtBB = load([ 'data/ETHZ/Applelogos/' gt_fname ] );
+    if 0
+        imshow( ['data\ETHZ\Applelogos/' t_base '_edges.bmp']); hold on;
+    end
+    [fea1 , label1 ] = fea2label( feas, bbs, gtBB);
+    fea = [ full( fea1' ) ;fea];
+    label = [label1' ;label ];   
+end
+
+bestcv = 0;
+for log2c = -1:3,
+  for log2g = -4:1,
+        options = ['-v 5 -c ' ,num2str( 2^log2c ),'-g', num2str(2^log2g), '-w1 3 -w-1 1' ];
+        cv = svmtrain( label , fea,  options );
+        if ( cv >= bestcv),
+            bestcv = cv; bestc = 2^log2c; bestg = 2^log2g;
+            fprintf('%g %g %g (best c=%g, g=%g, rate=%g)\n', log2c, log2g, cv, bestc, bestg, bestcv);
+        end
+  end
+end
+ options = [ '-b 1 -c ', num2str( bestc) ,'-g', num2str( bestg ) , '-w1 3 -w-1 1' ];
+ model = svmtrain( label , fea,  options );
+
+ ids = [];
+BB = [];
+gt1 = cell( length( tst_ixs) , 1 );
+for test_img_idx = tst_ixs
+    fpath = fdatabase( test_img_idx  ).name ;
+    t_base = fpath(1 : length(fpath) - 8 - 7 );
+    gt_fname = [t_base '_' class_name '.groundtruth'];
+    
+    load( [ 'data/ETHZ/Applelogos/' fpath ] , 'feas','bbs');
+    gt1{ test_img_idx } = load( [ 'data/ETHZ/Applelogos/' gt_fname ] ) ;
+    
+    label2 = zeros( size( feas,2), 1 );
+    [ label2 , ~ , prob_estimates ] = svmpredict( label2,feas',model,'-b 1' );
+    idx = find( label2 == 1 );
+    
+    bbs(:,5 ) = prob_estimates( :,1);
+    bbs = bbs( idx,:);sort
+    %pick = nms( bbs, 0.7 ) ;
+    
+    ids = [ ids ;ones( size( bbs, 1 ) , 1 ) * test_img_idx  ];
+    BB = [ BB ; bbs ];
+end
+temp.gt = gt1;
+[recall, prec, ap] = evaldet( temp, ids , BB,1);
+
+fprintf('\n===============================================\n');
+fprintf('Average classification accuracy: %f\n', Ravg);
+fprintf('Standard deviation: %f\n', Rstd);    
+fprintf('===============================================\n');
